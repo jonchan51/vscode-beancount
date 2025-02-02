@@ -19,6 +19,7 @@ interface Account {
   close: string;
   currencies: string;
   balance: string[];
+  balance_incl_subaccounts: string[];
 }
 
 interface CompletionData {
@@ -31,8 +32,7 @@ interface CompletionData {
 }
 
 export class Completer
-  implements vscode.CompletionItemProvider, vscode.HoverProvider
-{
+  implements vscode.CompletionItemProvider, vscode.HoverProvider {
   extension: Extension;
   accounts: { [name: string]: Account };
   payees: string[];
@@ -80,9 +80,9 @@ export class Completer
       const lines = [
         name,
         "balance: " +
-          (this.accounts[name].balance.length > 0
-            ? this.accounts[name].balance
-            : "0"),
+        (this.accounts[name].balance.length > 0
+          ? this.accounts[name].balance
+          : "0"),
         "opened on " + this.accounts[name].open,
       ];
       if (this.accounts[name].close.length > 0) {
@@ -108,31 +108,58 @@ export class Completer
     position: vscode.Position,
     _token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
+    const balanceDescriptionForAccount = (name: string, inclSubaccounts: boolean) => {
+      let description;
+      const balances = inclSubaccounts ? this.accounts[name].balance_incl_subaccounts : this.accounts[name].balance;
+      const balanceArray = balances.map(
+        (balance, index, balances) => {
+          return "* " + balance;
+        }
+      );
+      if (balanceArray.length === 0) {
+        description = new vscode.MarkdownString(name + "\n\nbalance: 0");
+      } else if (balanceArray.length === 1) {
+        const balance = inclSubaccounts ? this.accounts[name].balance_incl_subaccounts : this.accounts[name].balance;
+        description = new vscode.MarkdownString(
+          name + "\n\nbalance: " + balance
+        );
+      } else {
+        const balanceMd = balanceArray.join("\n");
+        description = new vscode.MarkdownString(
+          name + "\n\nbalance:\n" + balanceMd
+        );
+      }
+      return description;
+    };
+    const get_subaccounts = (root_account: string) => {
+      const subaccounts = Object.keys(this.accounts).filter((account : string) =>
+        account.startsWith(root_account + ":"));
+      subaccounts.push(root_account);
+      return subaccounts.sort();
+    };
     return new Promise((resolve, _reject) => {
+      const inclSubaccounts = vscode.workspace.getConfiguration("beancount")["hoverIncludeSubaccounts"];
+
       const wordRange = document.getWordRangeAtPosition(
         position,
         this.wordPattern
       );
       const name = document.getText(wordRange);
       if (name in this.accounts) {
-        let description;
-        const balanceArray = this.accounts[name].balance.map(
-          (balance, index, balances) => {
-            return "* " + balance;
+        let description = balanceDescriptionForAccount(name, inclSubaccounts);
+
+        if (inclSubaccounts) {
+          const subaccounts = get_subaccounts(name);
+          if (subaccounts.length > 1) {
+            description.appendText("\n----------------");
+            for (const subaccount of subaccounts) {
+              const additional = balanceDescriptionForAccount(subaccount, false);
+              description.appendText("\n");
+              description.appendMarkdown(additional.value);
+            }
           }
-        );
-        if (balanceArray.length === 0) {
-          description = new vscode.MarkdownString(name + "\n\nbalance: 0");
-        } else if (balanceArray.length === 1) {
-          description = new vscode.MarkdownString(
-            name + "\n\nbalance: " + this.accounts[name].balance
-          );
-        } else {
-          const balanceMd = balanceArray.join("\n");
-          description = new vscode.MarkdownString(
-            name + "\n\nbalance:\n" + balanceMd
-          );
         }
+
         resolve(new vscode.Hover(description, wordRange));
       } else {
         resolve(null);

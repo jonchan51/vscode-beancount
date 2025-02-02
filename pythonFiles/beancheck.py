@@ -3,10 +3,10 @@
 from collections import defaultdict
 from sys import argv
 from beancount import loader
-from beancount.core import flags
+from beancount.core import convert, flags
 from beancount.core.data import Transaction, Open, Close
 from beancount.core.display_context import Align 
-from beancount.core.realization import dump_balances, realize
+from beancount.core.realization import compute_balance, dump_balances, realize, iter_children
 import io
 import json
 
@@ -76,7 +76,8 @@ for entry in entries:
             'open': entry.date.__str__(),
             'currencies': entry.currencies if entry.currencies else [],
             'close': "",
-            'balance': []
+            'balance': [],
+            'balance_incl_subaccounts': []
         }
     elif isinstance(entry, Close):
         try:
@@ -85,7 +86,8 @@ for entry in entries:
             continue
 
 f = io.StringIO("")
-dump_balances(realize(entries), options['dcontext'].build(alignment=Align.DOT,reserved=2), at_cost=True, fullnames=True, file=f)
+realized_entries = realize(entries)
+dump_balances(realized_entries, options['dcontext'].build(alignment=Align.DOT,reserved=2), at_cost=True, fullnames=True, file=f)
 
 for line in f.getvalue().split('\n'):
     if len(line) > 0:
@@ -97,6 +99,13 @@ for line in f.getvalue().split('\n'):
                     accounts[parts[0]]['balance'].append(stripped_balance)
                 except:
                     continue
+
+for real_account in iter_children(realized_entries):
+    inventory = compute_balance(real_account)
+    if accounts.get(real_account.account) is None:
+        continue
+    for position in inventory.reduce(convert.get_cost).get_positions():
+        accounts[real_account.account]['balance_incl_subaccounts'].append(position.units.to_string())
 
 payees.discard("")
 payees.discard("None")
