@@ -54,6 +54,8 @@ This extension contributes the following settings:
 - `beancount.inputMethods`: List the input methods for auto-completion of payees
   and narrations with CJK characters. Currently only `pinyin` is supported.
   [See details](https://github.com/Lencerf/vscode-beancount/blob/master/InputMethods.md).
+- `beancount.hoverIncludeSubaccounts`: Set to `true` to make account balance hovers
+  include balance information of subaccounts
 
 ## Recommended practices
 
